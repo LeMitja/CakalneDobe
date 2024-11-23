@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}čakalneDobe{% endblock %}
+{% block content %}
+<p>čakalne dobe</p>
+
+<form id="data-form" style="display: flex; flex-wrap: wrap; gap: 20px; align-items: center;">
+    <label for="vzs_naziv" style="width: 100%;">Primerjaj čakalno dobo zdravstvenih storitev:</label>
+    <select name="vzs_naziv" id="vzs_naziv" class="vzs-naziv" style="flex: 1; min-width: 200px;"></select>
+    <select name="vzs_naziv2" id="vzs_naziv2" class="vzs-naziv" style="flex: 1; min-width: 200px;"></select>
+    <button type="submit" style="margin-left: 20px;">Primerjaj</button>
+</form>
+
+<!-- Chart Container -->
+<canvas id="myChart" width="400" height="200"></canvas>
+
+<!-- Include Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    $(document).ready(function () {
+        // Initialize Select2 with AJAX search
+        $("select.vzs-naziv").select2({
+            placeholder: "Izberi zdravstveno storitev...",
+            minimumInputLength: 0, // Trigger AJAX after 2 characters
+            ajax: {
+                url: "/search-vzs", // Server endpoint for searching options
+                dataType: "json",
+                delay: 250, // Delay before making the request to avoid too many calls
+                data: function (params) {
+                    return { query: params.term }; // Send the search query to the server
+                },
+                processResults: function (data) {
+                    return {
+                        results: data.results.map(item => ({ id: item.vzs_naziv, text: item.vzs_naziv })),
+                    };
+                },
+            },
+        });
+
+        // Handle form submission to fetch chart data
+        document.getElementById("data-form").addEventListener("submit", function (e) {
+            e.preventDefault(); // Prevent page reload
+
+            const selectedValue = document.getElementById("vzs_naziv").value;
+            const selectedValue2 = document.getElementById("vzs_naziv2").value;
+            
+            // Fetch data from server
+            const fetchData1 = fetch("/get-chart-data/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": "{{ csrf_token }}",
+                },
+                body: JSON.stringify({ vzs_naziv: selectedValue }),
+            })
+            .then(response => response.json())
+
+            const fetchData2 = fetch("/get-chart-data/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": "{{ csrf_token }}",
+                },
+                body: JSON.stringify({ vzs_naziv: selectedValue2 }),
+            }).then(response => response.json());
+
+            Promise.all([fetchData1, fetchData2])
+                .then(([data1, data2]) => {
+                    const ctx = document.getElementById("myChart").getContext("2d");
+
+                    // Destroy existing chart if any
+                    if (window.myChart && typeof window.myChart.destroy === "function") {
+                        window.myChart.destroy();
+                    }
+
+                    // Create new chart
+                    window.myChart = new Chart(ctx, {
+                        type: "bar",
+                        data: {
+                            labels: ["ZELO HITRO", "HITRO", "REDNO"],
+                            datasets: [
+                                {
+                                    label: `ČD: ${selectedValue}`,
+                                    data: [
+                                        data1.povprecna_cd_zelo_h,
+                                        data1.povprecna_cd_hitro,
+                                        data1.povprecna_cd_redno,
+                                    ],
+                                    backgroundColor: "#A63F8A",
+                                },
+                                {
+                                    label: `ČD: ${selectedValue2}`,
+                                    data: [
+                                        data2.povprecna_cd_zelo_h,
+                                        data2.povprecna_cd_hitro,
+                                        data2.povprecna_cd_redno,
+                                    ],
+                                    backgroundColor: "#30588C",
+                                },
+                            ],
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: "top",
+                                },
+                                title: {
+                                    display: true,
+                                    text: "Primerjava čakalnih dob",
+                                },
+                                datalabels: {
+                                    display: true,
+                                    color: "black",
+                                    font: {
+                                        weight: "bold",
+                                    },
+                                    anchor: "start", 
+                                    align: "end",  
+                                    formatter: function (value) {
+                                        return value; // Display the data value
+                                    },
+                                },
+                            },
+                        },
+                        plugins: [ChartDataLabels], // Enable the DataLabels plugin
+                    });
+                    
+                })
+            .catch(error => console.error("Error fetching data:", error));
+        });
+    });
+</script>
+{% endblock %}
